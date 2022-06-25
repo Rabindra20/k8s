@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namePrefix: qa-
+commonLabels:
+  app: qa-demo-api
+  release: qa
+namespace: test
+resources:
+- ../../base
+images:
+- name: 
+  newName: 
+  newTag: 
+
+patches:
+  - target:
+      kind: Ingress
+      name: ingress
+    path: ingress-patch.json
