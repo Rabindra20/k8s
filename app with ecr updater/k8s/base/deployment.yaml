@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: deploy-app-demo
-  namespace: vyaguta
+  namespace: test
   labels:
     app: demo-app
 spec:
