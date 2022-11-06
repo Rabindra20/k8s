@@ -4,14 +4,17 @@ namePrefix: dev-
 commonLabels:
   app: dev-demo-app
   release: dev
-namespace: test   #for rancher
+namespace: test   
 # namespace: test 
 resources:
 - ../../base
-images:
-- name: demo
-  newName: ecr.us-east-2.amazonaws.com/demo-app
-  newTag: 
+patchesStrategicMerge:
+  - deployment.yaml
+  
+# images:
+# - name: demo
+#   newName: ecr.us-east-2.amazonaws.com/demo-app
+#   newTag: 
 
 # patches:
 #   - target:

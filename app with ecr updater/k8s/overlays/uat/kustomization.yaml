@@ -7,6 +7,10 @@ commonLabels:
 namespace: test
 resources:
 - ../../base
+
+patchesStrategicMerge:
+  - deployment.yaml
+ 
 images:
 - name: 
   newName: 
