@@ -1,0 +1,46 @@
+version: '3.4'
+
+volumes:
+  dbVol: {}
+  
+services:
+  api:
+    env_file: .env
+    build:
+      context: .
+      target: build
+      #args:
+      #   NODE_ENV: development
+      #dockerfile: Dockerfile
+    container_name: demo
+    # environment:
+    #   - CORS_ORIGIN=http://localhost:3000,http://localhost:3001
+    volumes:
+      - ./:/usr/src/app
+    command: yarn start
+    ports:
+      - "8080:8080"
+    image: demo
+    depends_on:
+      - db
+  migration:
+    build:
+      context: .
+      target: build
+    volumes:
+      - ./:/usr/src/app
+    depends_on:
+      - db
+    links:
+      - db
+    command: yarn migrate && yarn seed
+  db:
+    container_name: mysql
+    image: mysql:8
+    restart: always
+    volumes:
+      - dbVol:/data/db
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
