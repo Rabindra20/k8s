@@ -1,0 +1,135 @@
+name: k8s
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+env:
+  ECR_BASE_URL: test
+  ECR_REPO_NAME: test
+  AWS_DEFAULT_REGION: us-west-2
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: Build Artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: check stage
+        shell: bash
+        run: |
+          if [ $GITHUB_REF_NAME == "main" ]
+          then
+            echo "export STAGE=prod" >> ~/.bash_profile
+          elif [ $GITHUB_REF_NAME == "qa" ]
+          then
+           echo 'export STAGE=beta' >> ~/.bash_profile
+            else
+              echo "Undefined stage"
+            fi 
+
+      - name: Set Vars
+        id: set_vars
+        run: |
+          source ~/.bash_profile
+          BUILD_NUM=$(echo $GITHUB_RUN_NUMBER)
+          BUILD_ID=$(echo $GITHUB_SHA | head -c7)
+          echo "TAG=${ECR_BASE_URL}/${ECR_REPO_NAME}:${BUILD_ID}_${BUILD_NUM}" >> $GITHUB_OUTPUT
+          echo "TAGPULL=${ECR_BASE_URL}/${ECR_REPO_NAME}:$STAGE">> $GITHUB_OUTPUT
+          echo "BRANCH=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
+          echo "STAGE=$STAGE" >>$GITHUB_OUTPUT
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::XXXXXXXXXXXX
+          aws-region: ${{env.AWS_DEFAULT_REGION}}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push Docker Image
+        uses: docker/build-push-action@v4
+        if: github.event_name == 'pull_request'
+        with:
+          push: true
+          tags: ${{ steps.set_vars.outputs.TAG }}
+
+      - name: Generate Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          avatar_url=${{ github.event.sender.avatar_url }}
+          actual_url="https://avatars.githubusercontent.com/u/${avatar_url:40:100}"
+          echo "### BUILD INFO :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
+          echo "**BRANCH**: ${{ steps.set_vars.outputs.BRANCH }}" >> $GITHUB_STEP_SUMMARY
+          echo "**IMAGE TAG**: ${{ steps.set_vars.outputs.TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo ":technologist: **Deployer** - <img src='${actual_url}' width="20"> ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Build and push Docker Image
+        uses: docker/build-push-action@v4
+        if: contains(github.ref,'main')
+        with:
+          push: true
+          tags: ${{ steps.set_vars.outputs.TAGPULL }}
+          build-args: |
+            STAGE=${{ steps.set_vars.outputs.STAGE }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: check stage
+        shell: bash
+        run: |
+          sudo apt -y update || true
+          if [ $GITHUB_REF_NAME == "main" ]
+          then
+            echo "export STAGE=prod" >> ~/.bash_profile
+          elif [ $GITHUB_REF_NAME == "qa" ]
+          then
+           echo 'export STAGE=qa' >> ~/.bash_profile
+            else
+              echo "Undefined stage"
+            fi 
+      - name: Configure AWS Credentials
+        if: contains(github.ref,'main')
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{env.AWS_DEFAULT_REGION}}
+
+      - name: Deploy in eks
+        if: contains(github.ref,'dev') || contains(github.ref,'qa')
+        env:
+          CLUSTER: ${{ secrets.CLUSTER }}
+        run: |
+          source ~/.bash_profile
+          sudo apt-get update
+          sudo snap install kubectl --classic
+          aws eks --region ${{env.AWS_DEFAULT_REGION}} update-kubeconfig --name $CLUSTER
+          kubectl rollout restart deploy $STAGE-deploy -n $STAGE
+
+# Deploy in ecs
+
+      # - name: Deploy in ECS
+      #   if: contains(github.ref,'master')
+      #   env:
+      #      CLUSTER: ${{ secrets.ECS_CLUSTER }}
+      #   run: | 
+      #       source ~/.bash_profile
+      #       aws ecs update-service --force-new-deployment --service servicename-$STAGE --cluster $CLUSTER
